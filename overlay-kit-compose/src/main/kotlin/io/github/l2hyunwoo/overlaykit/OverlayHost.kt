@@ -122,13 +122,13 @@ private fun EnterCompletionEffect(state: OverlayHostState, entry: OverlayEntry) 
 private fun rememberOverlayScope(
     state: OverlayHostState,
     entry: OverlayEntry,
-): AsyncOverlayScope<Any?> = remember(entry.id) { EntryOverlayScope(state, entry) }
+): ResultOverlayScope<Any?> = remember(entry.id) { EntryOverlayScope(state, entry) }
 
 @androidx.compose.runtime.Stable
 private class EntryOverlayScope(
     private val state: OverlayHostState,
     private val entry: OverlayEntry,
-) : AsyncOverlayScope<Any?> {
+) : ResultOverlayScope<Any?> {
     override val phase: OverlayPhase get() = entry.phase
     override fun close() = state.close(entry.id)
     override fun close(result: Any?) = state.resolveAndClose(entry.id, result)

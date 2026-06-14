@@ -17,8 +17,8 @@ public class OverlayEntry internal constructor(
     public val id: String,
     public val placement: OverlayPlacement,
     /**
-     * The overlay body. The scope is a **parameter**, not an extension receiver, so `openAsync`'s
-     * typed `AsyncOverlayScope<T>` content can be wrapped without a raw cast — casting a
+     * The overlay body. The scope is a **parameter**, not an extension receiver, so `openForResult`'s
+     * typed `ResultOverlayScope<T>` content can be wrapped without a raw cast — casting a
      * `@Composable` lambda (compiled to `Function3`) to a differently-shaped function type throws
      * `ClassCastException`.
      */
@@ -31,7 +31,7 @@ public class OverlayEntry internal constructor(
         internal set
 
     /**
-     * Consume-once resolver for `openAsync` (null for fire-and-forget [OverlayController.open]). The
+     * Consume-once resolver for `openForResult` (null for fire-and-forget [OverlayController.open]). The
      * first caller to win the CAS that clears this reference is the only one allowed to resume the
      * continuation — the single-resume gate, in place of a TOCTOU-prone `continuation.isActive` check.
      */

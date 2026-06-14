@@ -22,7 +22,7 @@ public fun rememberOverlayHostState(): OverlayHostState = remember { OverlayHost
  * Remember a stable [OverlayController] bound to the nearest [OverlayHostState].
  *
  * @param placement default placement for overlays opened through this controller.
- * @param mainDispatcher dispatcher used to marshal `openAsync` cancellation teardown to the main
+ * @param mainDispatcher dispatcher used to marshal `openForResult` cancellation teardown to the main
  *   thread. Injectable for tests.
  */
 @Composable

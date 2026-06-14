@@ -94,7 +94,7 @@ public class OverlayHostState internal constructor() {
         entry.phase = OverlayPhase.Removed
         val index = indexOf(entry.id)
         if (index >= 0) entries.removeAt(index)
-        // Removed with no explicit value cancels any still-awaiting openAsync caller.
+        // Removed with no explicit value dismisses any still-awaiting openForResult caller.
         consumeResolver(entry)?.invoke(ResolveSignal.Removed)
     }
 
@@ -126,7 +126,7 @@ public class OverlayHostState internal constructor() {
 
 /**
  * What a consumed resolver was handed: an explicit [Value], or [Removed] when the overlay was torn
- * down without a result (cancels the awaiting `openAsync`).
+ * down without a result (dismisses the awaiting `openForResult` with `OverlayResult.Dismissed`).
  */
 internal sealed interface ResolveSignal {
     @JvmInline value class Value(val value: Any?) : ResolveSignal

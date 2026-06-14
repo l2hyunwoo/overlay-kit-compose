@@ -21,14 +21,15 @@ public interface OverlayScope {
 }
 
 /**
- * Receiver scope handed to the content of an overlay opened with [OverlayController.openAsync].
+ * Receiver scope handed to the content of an overlay opened with [OverlayController.openForResult].
  *
- * Calling [close] resolves the suspended `openAsync` call exactly once with [result]. The
- * consume-once gate inside [OverlayHostState] guarantees a single resume even if [close] is
- * invoked multiple times or races with [OverlayController.closeAll].
+ * Calling [close] resolves the suspended `openForResult` call exactly once with
+ * [OverlayResult.Resolved] carrying [result]. The consume-once gate inside [OverlayHostState]
+ * guarantees a single resume even if [close] is invoked multiple times or races with
+ * [OverlayController.closeAll].
  */
 @Stable
-public interface AsyncOverlayScope<T> : OverlayScope {
-    /** Resolve the awaiting `openAsync` with [result] and drive the overlay to removal. */
+public interface ResultOverlayScope<T> : OverlayScope {
+    /** Resolve the awaiting `openForResult` with [result] and drive the overlay to removal. */
     public fun close(result: T)
 }
