@@ -11,7 +11,9 @@ junit = "4.13.2"
 truth = "1.4.4"
 robolectric = "4.16.1"
 androidxTestCore = "1.6.1"
+androidxTestRunner = "1.6.2"
 androidxTestEspresso = "3.6.1"
+androidxTestUiautomator = "2.3.0"
 
 [libraries]
 # compose (versions come from the BOM)
@@ -40,8 +42,10 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 # suite runs in the same cheap unit-test job as the pure-store tests — no emulator job needed.
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version = "1.2.1" }
 androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "androidxTestEspresso" }
+androidx-test-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "androidxTestUiautomator" }
 
 [plugins]
 android-library = { id = "com.android.library", version.ref = "agp" }
