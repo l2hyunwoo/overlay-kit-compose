@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.window.Dialog
@@ -31,7 +32,11 @@ public fun OverlayHost(
         val topMostInComposition = inCompositionEntries.lastOrNull { it.phase != OverlayPhase.Exiting }
 
         entries.forEach { entry ->
-            // key(id) so an entry's transition/scope survive reordering and unrelated recompositions.
+            // key(id) keeps each entry's group identified across recompositions and list reorders;
+            // inside it, the entry's content is wrapped in movableContentOf so that when
+            // bringToFront() repositions the entry, the whole content slot — its enter/exit
+            // transition progress and any content-internal remember — *moves* to the new index
+            // instead of being disposed at the old one and re-created at the new one.
             key(entry.id) {
                 when (entry.placement) {
                     OverlayPlacement.InComposition ->
@@ -59,13 +64,39 @@ private fun InCompositionOverlay(
         BackHandler(enabled = true) { state.close(entry.id) }
     }
 
-    AnimatedVisibility(visibleState = entry.transitionState) {
-        val scope = rememberOverlayScope(state, entry)
-        entry.content(scope)
-    }
+    // One movable slot per entry, remembered by id so the same instance is reused every
+    // recomposition (a fresh lambda each pass would defeat the move). It is invoked at exactly one
+    // call site below — invoking the same movable content in two places at once throws
+    // (MovableContent identity is a single state holder) — and bringToFront() repositions the entry
+    // as a pure list move, never duplicating a call site, so that invariant always holds.
+    val movableBody = rememberMovableOverlayBody(state, entry)
+    movableBody()
 
     ExitCompletionEffect(state, entry)
     EnterCompletionEffect(state, entry)
+}
+
+/**
+ * The per-entry content wrapped in [movableContentOf], remembered by [OverlayEntry.id] so the slot
+ * — and the [AnimatedVisibility] transition plus the content's internal `remember` it holds — moves
+ * with the entry when [OverlayHostState.bringToFront] repositions it, rather than being torn down.
+ *
+ * The [AnimatedVisibility] stays *inside* the movable body: it is the unit whose enter/exit state we
+ * want to carry across the move. [OverlayHostState.bringToFront] refuses to move an entry once it is
+ * [OverlayPhase.Exiting], so a move never coincides with `AnimatedVisibility` disposing its content
+ * Layout on exit completion — the two never race.
+ */
+@Composable
+private fun rememberMovableOverlayBody(
+    state: OverlayHostState,
+    entry: OverlayEntry,
+): @Composable () -> Unit = remember(entry.id) {
+    movableContentOf {
+        AnimatedVisibility(visibleState = entry.transitionState) {
+            val scope = rememberOverlayScope(state, entry)
+            entry.content(scope)
+        }
+    }
 }
 
 @Composable
