@@ -27,14 +27,31 @@ public interface OverlayController {
     ): String
 
     /**
-     * Open an overlay and suspend until it resolves itself via [AsyncOverlayScope.close], returning
-     * the supplied result. Cancelling the calling coroutine tears the overlay down. A double `close`
-     * or a `close` racing `closeAll` still resumes exactly once.
+     * Open an overlay and suspend until it terminates, returning an [OverlayResult]:
+     *
+     * - [OverlayResult.Resolved] — the overlay called [ResultOverlayScope.close] with a value.
+     * - [OverlayResult.Dismissed] — the overlay was closed without a result (a plain
+     *   [OverlayScope.close] or [closeAll]). This is a **normal return**, not a cancellation.
+     *
+     * Both outcomes resume normally, so handle them with a `when`. If the *calling* coroutine is
+     * cancelled (e.g. its `Job` is cancelled, or its scope leaves the composition), a
+     * `CancellationException` propagates as usual and the overlay is torn down — do not catch that
+     * exception to detect a dismissal (it would break structured concurrency and cannot be told
+     * apart from a real cancellation: `cancel(null)` produces a fixed-message `CancellationException`
+     * either way).
+     *
+     * A double `close`, or a `close` racing `closeAll`, still resumes exactly once.
+     *
+     * Leak note: the [continuation][CancellableContinuation] cancellation handler is non-blocking and
+     * thread-safe (it may run on any thread). The consume-once gate means only the first terminal
+     * signal resumes; later ones are ignored, not errors. An [OverlayResult.Resolved] value is held
+     * by a strong reference until the caller consumes it, so avoid returning an `Activity`, `View`,
+     * or large `Bitmap`.
      */
-    public suspend fun <T> openAsync(
+    public suspend fun <T> openForResult(
         id: String? = null,
-        content: @Composable AsyncOverlayScope<T>.() -> Unit,
-    ): T
+        content: @Composable ResultOverlayScope<T>.() -> Unit,
+    ): OverlayResult<T>
 
     /** Animated close of the overlay with [id] (no-op if absent or already closing). */
     public fun close(id: String)
@@ -50,7 +67,7 @@ public interface OverlayController {
 }
 
 /**
- * @param mainDispatcher dispatcher the `openAsync` cancellation teardown is marshalled to.
+ * @param mainDispatcher dispatcher the `openForResult` cancellation teardown is marshalled to.
  *   Injectable so tests can supply a `TestDispatcher`.
  */
 internal class OverlayControllerImpl(
@@ -80,18 +97,18 @@ internal class OverlayControllerImpl(
         return overlayId
     }
 
-    override suspend fun <T> openAsync(
+    override suspend fun <T> openForResult(
         id: String?,
-        content: @Composable AsyncOverlayScope<T>.() -> Unit,
-    ): T = suspendCancellableCoroutine { continuation ->
+        content: @Composable ResultOverlayScope<T>.() -> Unit,
+    ): OverlayResult<T> = suspendCancellableCoroutine { continuation ->
         val overlayId = id ?: nextId()
 
         // Wrap the typed content in a composable lambda (no raw cast). The host always supplies an
-        // EntryOverlayScope, which implements AsyncOverlayScope<Any?>; the typed content only uses
+        // EntryOverlayScope, which implements ResultOverlayScope<Any?>; the typed content only uses
         // close(result: T), and T is erased, so the unchecked cast of the scope is sound.
         val wrapped: @Composable (OverlayScope) -> Unit = { scope ->
             @Suppress("UNCHECKED_CAST")
-            (scope as AsyncOverlayScope<T>).content()
+            (scope as ResultOverlayScope<T>).content()
         }
 
         if (!state.revive(overlayId)) {
@@ -112,15 +129,20 @@ internal class OverlayControllerImpl(
         }
     }
 
-    private fun <T> resumeOnce(continuation: CancellableContinuation<T>, signal: ResolveSignal) {
+    private fun <T> resumeOnce(
+        continuation: CancellableContinuation<OverlayResult<T>>,
+        signal: ResolveSignal,
+    ) {
         // The consume-once CAS in OverlayHostState guarantees this runs at most once, so no
         // `isActive` guard (a TOCTOU race) is needed. Resuming a cancelled continuation is a no-op.
+        // A result-less teardown (Removed) is a normal Dismissed return, not a cancellation, so the
+        // caller can tell it apart from a real coroutine cancellation, which still throws.
         when (signal) {
             is ResolveSignal.Value -> {
                 @Suppress("UNCHECKED_CAST")
-                continuation.resume(signal.value as T)
+                continuation.resume(OverlayResult.Resolved(signal.value as T))
             }
-            ResolveSignal.Removed -> continuation.cancel()
+            ResolveSignal.Removed -> continuation.resume(OverlayResult.Dismissed)
         }
     }
 

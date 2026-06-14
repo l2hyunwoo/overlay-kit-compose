@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.l2hyunwoo.overlaykit.OverlayHost
 import io.github.l2hyunwoo.overlaykit.OverlayPlacement
+import io.github.l2hyunwoo.overlaykit.OverlayResult
 import io.github.l2hyunwoo.overlaykit.rememberOverlayController
 import io.github.l2hyunwoo.overlaykit.rememberOverlayHostState
 import kotlinx.coroutines.launch
@@ -86,16 +87,22 @@ private fun SampleScreen() {
             modifier = Modifier.fillMaxWidth(),
             onClick = {
                 scope.launch {
-                    val result = dialog.openAsync<String> {
+                    val result = dialog.openForResult<String> {
                         ConfirmDialogContent(
                             onConfirm = { close("confirmed") },
                             onCancel = { close("cancelled") },
+                            // A plain close() (e.g. the back button or a tap outside) dismisses
+                            // without a result instead of carrying one.
+                            onDismiss = ::close,
                         )
                     }
-                    lastAsyncResult = result
+                    lastAsyncResult = when (result) {
+                        is OverlayResult.Resolved -> result.value
+                        OverlayResult.Dismissed -> "dismissed"
+                    }
                 }
             },
-        ) { Text("openAsync() dialog → awaits result") }
+        ) { Text("openForResult() dialog → awaits result") }
 
         Button(
             modifier = Modifier.fillMaxWidth(),
@@ -132,16 +139,21 @@ private fun Banner(text: String, onClose: () -> Unit) {
 }
 
 @Composable
-private fun ConfirmDialogContent(onConfirm: () -> Unit, onCancel: () -> Unit) {
+private fun ConfirmDialogContent(
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     Card(shape = RoundedCornerShape(16.dp)) {
         Column(
-            modifier = Modifier.padding(24.dp).size(width = 260.dp, height = 160.dp),
+            modifier = Modifier.padding(24.dp).size(width = 260.dp, height = 200.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Text("Proceed?", style = MaterialTheme.typography.titleLarge)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(modifier = Modifier.fillMaxWidth(), onClick = onConfirm) { Text("Confirm") }
                 Button(modifier = Modifier.fillMaxWidth(), onClick = onCancel) { Text("Cancel") }
+                Button(modifier = Modifier.fillMaxWidth(), onClick = onDismiss) { Text("Dismiss") }
             }
         }
     }

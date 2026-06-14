@@ -20,8 +20,8 @@ awkward, and leaves exit animations half-handled. overlay-kit-compose moves that
 phase-gated store and gives you an imperative controller:
 
 ```kotlin
-controller.open { close -> /* ... */ }
-val result = controller.openAsync<Choice> { /* ... close(choice) ... */ }
+controller.open { /* ... close() ... */ }
+val result = controller.openForResult<Choice> { /* ... close(choice) ... */ }
 ```
 
 ## Install
@@ -67,23 +67,37 @@ fun HomeScreen() {
 overlay id; calling `open(id = ...)` again with the same id revives a closing overlay instead of
 stacking a new one.
 
-### Awaiting a result with `openAsync`
+### Awaiting a result with `openForResult`
 
-`openAsync` suspends until the overlay resolves itself, returning the value passed to
-`AsyncOverlayScope.close(result)`:
+`openForResult` suspends until the overlay terminates and returns an `OverlayResult<T>` so the two
+ways an overlay can end are distinct values, never a `null`:
+
+- `OverlayResult.Resolved(value)` — the overlay called `close(value)` on its `ResultOverlayScope`.
+- `OverlayResult.Dismissed` — the overlay was closed without a result (a plain `close()` or
+  `closeAll()`). This is a normal return, so handle it in a `when` alongside `Resolved`.
 
 ```kotlin
-val choice: Choice = overlays.openAsync {     // receiver: AsyncOverlayScope<Choice>
+val result = overlays.openForResult<Choice> {     // receiver: ResultOverlayScope<Choice>
     ConfirmDialog(
         onConfirm = { close(Choice.Confirm) },
         onCancel  = { close(Choice.Cancel) },
+        onDismiss = { close() },                  // result-less close → Dismissed
     )
+}
+
+when (result) {
+    is OverlayResult.Resolved -> apply(result.value)
+    OverlayResult.Dismissed   -> { /* user backed out */ }
 }
 ```
 
 Resume is consume-once: a double `close`, or a `close` racing `closeAll`, resolves the call exactly
-once. If the overlay is torn down without an explicit result (a plain `close()` or `closeAll()`), the
-awaiting coroutine is cancelled. Cancelling the calling coroutine tears the overlay down.
+once.
+
+Dismissal is a return value, not an exception — don't use a `try`/`catch` to detect it. Cancelling
+the *calling* coroutine (its `Job` is cancelled, or its scope leaves the composition) throws a
+`CancellationException` and tears the overlay down. That cancellation is a genuinely different event
+from a dismissal and must not be caught to fake one, which would break structured concurrency.
 
 ### Placement
 
@@ -96,8 +110,12 @@ awaiting coroutine is cancelled. Cancelling the calling coroutine tears the over
 
 ```kotlin
 val dialogs = rememberOverlayController(placement = OverlayPlacement.Dialog)
-dialogs.openAsync<Boolean> { ConfirmDialog(...) }
+dialogs.openForResult<Boolean> { ConfirmDialog(...) }
 ```
+
+Placement is full-screen or own-window only; an overlay anchored to a specific composable (e.g. a
+tooltip pinned to a button) is out of scope — reach for a dedicated library such as
+[Balloon](https://github.com/skydoves/Balloon) for that.
 
 ### Closing
 
@@ -115,9 +133,10 @@ overlays.unmountAll()  // immediate removal of every overlay
 | `OverlayHost(state, content)` | Renders overlays above `content`. |
 | `rememberOverlayHostState()` | One stable `OverlayHostState` per composition. |
 | `rememberOverlayController(placement, mainDispatcher)` | Imperative handle. |
-| `OverlayController` | `open` / `openAsync` / `close` / `unmount` / `closeAll` / `unmountAll`. |
+| `OverlayController` | `open` / `openForResult` / `close` / `unmount` / `closeAll` / `unmountAll`. |
 | `OverlayScope` | `phase`, `close()`, `unmount()`. |
-| `AsyncOverlayScope<T>` | adds `close(result: T)`. |
+| `ResultOverlayScope<T>` | adds `close(result: T)`. |
+| `OverlayResult<T>` | `Resolved(value)`, `Dismissed`. |
 | `OverlayPlacement` | `InComposition`, `Dialog`. |
 | `OverlayPhase` | `Entering`, `Visible`, `Exiting`, `Removed`. |
 
