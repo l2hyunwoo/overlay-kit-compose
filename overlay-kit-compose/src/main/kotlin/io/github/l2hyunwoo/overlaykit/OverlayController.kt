@@ -53,6 +53,18 @@ public interface OverlayController {
         content: @Composable ResultOverlayScope<T>.() -> Unit,
     ): OverlayResult<T>
 
+    /**
+     * Re-stack the overlay with [id] to the top of the z-order (rendered last, above its siblings),
+     * keeping the same overlay so its content state, internal `remember`, and any in-flight enter
+     * transition survive the move.
+     *
+     * No-op (and the z-order is unchanged) if [id] is absent, already top-most, or animating out —
+     * an overlay that is closing is on its way out and is not brought back to the front. Only affects
+     * [OverlayPlacement.InComposition] overlays; [OverlayPlacement.Dialog] overlays each own a
+     * separate platform window and are not stacked within the host composition.
+     */
+    public fun bringToFront(id: String)
+
     /** Animated close of the overlay with [id] (no-op if absent or already closing). */
     public fun close(id: String)
 
@@ -144,6 +156,10 @@ internal class OverlayControllerImpl(
             }
             ResolveSignal.Removed -> continuation.resume(OverlayResult.Dismissed)
         }
+    }
+
+    override fun bringToFront(id: String) {
+        state.bringToFront(id)
     }
 
     override fun close(id: String) {
