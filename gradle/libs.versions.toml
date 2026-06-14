@@ -9,6 +9,9 @@ coreKtx = "1.13.1"
 # test
 junit = "4.13.2"
 truth = "1.4.4"
+robolectric = "4.16.1"
+androidxTestCore = "1.6.1"
+androidxTestEspresso = "3.6.1"
 
 [libraries]
 # compose (versions come from the BOM)
@@ -32,6 +35,13 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+
+# Robolectric brings Compose UI tests (createComposeRule) onto the JVM, so the host-instantiation
+# suite runs in the same cheap unit-test job as the pure-store tests — no emulator job needed.
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version = "1.2.1" }
+androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "androidxTestEspresso" }
 
 [plugins]
 android-library = { id = "com.android.library", version.ref = "agp" }

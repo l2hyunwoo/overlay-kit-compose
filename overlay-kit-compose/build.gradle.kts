@@ -31,6 +31,14 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests {
+            // Robolectric needs the merged Android resources/assets/manifest on the unit-test
+            // classpath; createComposeRule() also resolves its host Activity from the manifest.
+            isIncludeAndroidResources = true
+        }
+    }
+
     publishing {
         singleVariant("release") {
             withSourcesJar()
@@ -56,6 +64,19 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Compose UI tests run on the JVM via Robolectric (no emulator). createComposeRule() drives the
+    // same TestCoroutineScheduler-backed MainTestClock that advances AnimatedVisibility transitions
+    // and LaunchedEffect snapshotFlow collectors deterministically, so enter/exit completion is
+    // observable here. The test BOM keeps ui-test aligned with the runtime compose versions.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.compose.material3)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.ext.junit)
+    // ui-test-manifest supplies the empty ComponentActivity that createComposeRule() hosts content in.
+    debugImplementation(libs.compose.ui.test.manifest)
 }
 
 // Publishing skeleton only — coordinates wired, actual release is deferred.

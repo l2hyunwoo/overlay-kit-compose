@@ -39,8 +39,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
 
-      # Cheapest signal first: unit tests fail fast before the more expensive assembles.
-      - name: Unit tests (library)
+      # Cheapest signal first: unit tests fail fast before the more expensive assembles. This task
+      # runs both the pure-store JVM tests and the Robolectric Compose integration tests
+      # (createComposeRule), so no emulator job is needed — the latter drive AnimatedVisibility
+      # transitions on a TestCoroutineScheduler-backed clock entirely on the JVM.
+      - name: Unit tests (library, incl. Robolectric Compose)
         run: ./gradlew :overlay-kit-compose:testDebugUnitTest --no-daemon --stacktrace
 
       - name: Assemble library (release) and sample (debug)
