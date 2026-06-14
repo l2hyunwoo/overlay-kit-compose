@@ -109,6 +109,18 @@ private fun SampleScreen() {
 
         Button(
             modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                // Stack two distinct overlays, then re-stack the lower one on top. bringToFront keeps
+                // each overlay's own state and transition (movableContentOf), so the lifted banner is
+                // not re-created — it just changes z-order.
+                inComposition.open(id = "lower") { Banner(text = "Lower", onClose = ::close) }
+                inComposition.open(id = "upper") { Banner(text = "Upper", onClose = ::close) }
+                inComposition.bringToFront("lower")
+            },
+        ) { Text("bringToFront(\"lower\") above \"upper\"") }
+
+        Button(
+            modifier = Modifier.fillMaxWidth(),
             onClick = { inComposition.closeAll() },
         ) { Text("closeAll() in-composition") }
 

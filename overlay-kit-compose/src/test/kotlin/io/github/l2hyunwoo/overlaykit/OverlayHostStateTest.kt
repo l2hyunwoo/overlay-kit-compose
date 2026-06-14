@@ -190,4 +190,105 @@ class OverlayHostStateTest {
 
         assertThat(s.entries).isEmpty()
     }
+
+    // --- bringToFront (z-order reorder) -------------------------------------------------------
+
+    @Test
+    fun bringToFront_movesEntryToTopPreservingIdentity() {
+        val s = state()
+        val a = s.openEntry("a")
+        val b = s.openEntry("b")
+        val c = s.openEntry("c")
+        // Insertion order is z-order: a (bottom) .. c (top).
+        assertThat(s.entries).containsExactly(a, b, c).inOrder()
+
+        val moved = s.bringToFront("a")
+
+        assertThat(moved).isTrue()
+        // 'a' is now last (top z). b and c keep their relative order.
+        assertThat(s.entries).containsExactly(b, c, a).inOrder()
+        // The SAME OverlayEntry instance was repositioned — identity (and thus the movable slot the
+        // host keys on) is preserved, not a remove+re-add of a fresh entry.
+        assertThat(s.entries.last()).isSameInstanceAs(a)
+        assertThat(s.find("a")).isSameInstanceAs(a)
+    }
+
+    @Test
+    fun bringToFront_onAlreadyTopIsNoOp() {
+        val s = state()
+        val a = s.openEntry("a")
+        val b = s.openEntry("b")
+
+        val moved = s.bringToFront("b") // already the top-most entry
+
+        assertThat(moved).isFalse()
+        assertThat(s.entries).containsExactly(a, b).inOrder()
+    }
+
+    @Test
+    fun bringToFront_isIdempotent() {
+        val s = state()
+        val a = s.openEntry("a")
+        val b = s.openEntry("b")
+
+        assertThat(s.bringToFront("a")).isTrue()       // a -> top
+        assertThat(s.entries).containsExactly(b, a).inOrder()
+        assertThat(s.bringToFront("a")).isFalse()      // a already top: second call is a no-op
+        assertThat(s.entries).containsExactly(b, a).inOrder()
+    }
+
+    @Test
+    fun bringToFront_absentIdIsNoOp() {
+        val s = state()
+        val a = s.openEntry("a")
+
+        assertThat(s.bringToFront("missing")).isFalse()
+        assertThat(s.entries).containsExactly(a)
+    }
+
+    @Test
+    fun bringToFront_movesEnteringEntry() {
+        val s = state()
+        val a = s.openEntry("a") // still Entering (no onEnterFinished)
+        val b = s.openEntry("b")
+        assertThat(a.phase).isEqualTo(OverlayPhase.Entering)
+
+        // An entry whose enter transition has not settled is still a live, growing overlay and may
+        // be re-stacked; movableContentOf carries its in-flight enter transition across the move.
+        val moved = s.bringToFront("a")
+
+        assertThat(moved).isTrue()
+        assertThat(s.entries).containsExactly(b, a).inOrder()
+    }
+
+    @Test
+    fun bringToFront_refusesExitingEntry() {
+        val s = state()
+        val a = s.openEntry("a")
+        val b = s.openEntry("b")
+        s.onEnterFinished("a")
+        s.close("a")
+        assertThat(a.phase).isEqualTo(OverlayPhase.Exiting)
+
+        // An exiting overlay is on its way out; bringing it forward would race the host's
+        // AnimatedVisibility disposing the content Layout on exit completion. The gate refuses it.
+        val moved = s.bringToFront("a")
+
+        assertThat(moved).isFalse()
+        // z-order unchanged: a stays where it was.
+        assertThat(s.entries).containsExactly(a, b).inOrder()
+    }
+
+    @Test
+    fun bringToFront_refusesRemovedEntry() {
+        val s = state()
+        val a = s.openEntry("a")
+        s.openEntry("b")
+        s.unmount("a") // a -> Removed and detached
+        assertThat(a.phase).isEqualTo(OverlayPhase.Removed)
+
+        // The id no longer resolves to a live entry, so the reorder is a no-op.
+        assertThat(s.bringToFront("a")).isFalse()
+        assertThat(s.find("a")).isNull()
+    }
 }

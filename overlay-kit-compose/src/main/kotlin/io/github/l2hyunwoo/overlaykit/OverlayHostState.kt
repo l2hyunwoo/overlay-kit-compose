@@ -53,6 +53,39 @@ public class OverlayHostState internal constructor() {
         }
     }
 
+    /**
+     * Re-stack the entry [id] to the end of [entries] (top z-order) **in place**, preserving its
+     * identity so the host's `movableContentOf` slot moves rather than disposes — the entry's
+     * transition progress and content-internal `remember` survive the reorder.
+     *
+     * Phase gate: only a live, settling/settled overlay may move. An [OverlayPhase.Exiting] or
+     * [OverlayPhase.Removed] entry is left untouched (returns false), because while exiting the
+     * host's `AnimatedVisibility` is racing toward disposing the content `Layout`
+     * (`AnimatedVisibility.kt` `shouldDisposeBlock`: dispose once exit is idle), and moving a slot
+     * that is mid-dispose is exactly the [movableContentOf] hazard we serialize against. Idempotent:
+     * an id that is already top, or absent, is a no-op returning false.
+     */
+    internal fun bringToFront(id: String): Boolean {
+        val index = indexOf(id)
+        if (index < 0) return false
+        val entry = entries[index]
+        when (entry.phase) {
+            OverlayPhase.Entering, OverlayPhase.Visible -> Unit
+            OverlayPhase.Exiting, OverlayPhase.Removed -> return false
+        }
+        // Already the top-most entry — nothing to move (avoids a no-op list mutation that would
+        // still invalidate observers reading entries).
+        if (index == entries.lastIndex) return false
+        // Reposition the SAME OverlayEntry instance: removeAt + add re-appends the identical
+        // reference (SnapshotStateList has no move()). Because the instance — and therefore its id —
+        // is unchanged, the host's `remember(entry.id) { movableContentOf { … } }` resolves to the
+        // same movable slot, so the slot moves with its state/transition instead of being disposed
+        // and re-created at the new index.
+        entries.removeAt(index)
+        entries.add(entry)
+        return true
+    }
+
     /** Animated close. Idempotent for already-exiting/removed overlays; removal is deferred to [onExitFinished]. */
     internal fun close(id: String) {
         val entry = find(id) ?: return
