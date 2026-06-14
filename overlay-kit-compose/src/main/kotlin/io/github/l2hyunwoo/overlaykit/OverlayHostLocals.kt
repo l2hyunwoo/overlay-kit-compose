@@ -14,7 +14,15 @@ import kotlinx.coroutines.Dispatchers
 public val LocalOverlayHostState: androidx.compose.runtime.ProvidableCompositionLocal<OverlayHostState> =
     staticCompositionLocalOf { error("No OverlayHostState provided. Wrap content in an OverlayHost.") }
 
-/** Remember a single stable [OverlayHostState] for the lifetime of the composition. */
+/**
+ * Remember a single stable [OverlayHostState] for the lifetime of the composition.
+ *
+ * The state lives in a plain [remember], so it is **not** retained across configuration changes: an
+ * activity recreation (e.g. rotation) reinitializes it and drops every live overlay. Overlay content
+ * is a lambda and cannot be serialized, so there is no saved-state restoration. If a flow must
+ * survive rotation, the caller owns that — lock the orientation, or persist the decision yourself
+ * and re-open on re-entry.
+ */
 @Composable
 public fun rememberOverlayHostState(): OverlayHostState = remember { OverlayHostState() }
 

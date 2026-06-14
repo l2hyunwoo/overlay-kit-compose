@@ -126,6 +126,25 @@ overlays.closeAll()    // animated close of every overlay
 overlays.unmountAll()  // immediate removal of every overlay
 ```
 
+## Known limitation: configuration changes
+
+Overlays do not survive a configuration change. When the activity is recreated — most commonly on
+rotation — the host state is reinitialized and every live overlay is dropped. `rememberOverlayHostState()`
+holds the store in a plain `remember`, and an overlay's content is a lambda, which cannot be
+serialized, so there is no saved-state path to restore it.
+
+`openForResult` is affected the same way. Recreation disposes the composition the awaiting coroutine
+lives in, which cancels that coroutine. The call throws `CancellationException` rather than returning
+`Resolved` or `Dismissed`, and the overlay is torn down with it. The result is dropped, not delivered.
+
+For the overlays this library targets — confirmation dialogs, sheets, toasts — the overlay usually
+lives a shorter time than the interval between rotations, so the drop is acceptable. If a longer-lived
+flow (checkout, onboarding) must survive rotation, the caller owns that:
+
+- lock the orientation for that screen, or
+- persist the decision or result yourself in a `rememberSaveable` or `ViewModel`, and re-open the
+  overlay on re-entry.
+
 ## API surface (MVP)
 
 | Symbol | Purpose |

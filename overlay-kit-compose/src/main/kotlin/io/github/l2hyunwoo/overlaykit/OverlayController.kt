@@ -40,6 +40,11 @@ public interface OverlayController {
      * apart from a real cancellation: `cancel(null)` produces a fixed-message `CancellationException`
      * either way).
      *
+     * A configuration change is one such cancellation. Activity recreation (e.g. rotation) disposes
+     * the composition this call awaits in, so the call throws `CancellationException` rather than
+     * returning a result, and the overlay is dropped. Overlay state is not retained across
+     * configuration changes; if a flow must survive rotation, the caller is responsible for it.
+     *
      * A double `close`, or a `close` racing `closeAll`, still resumes exactly once.
      *
      * Leak note: the [continuation][CancellableContinuation] cancellation handler is non-blocking and

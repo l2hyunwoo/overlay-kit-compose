@@ -33,6 +33,9 @@ import io.github.l2hyunwoo.overlaykit.rememberOverlayHostState
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    // No android:configChanges is declared, so rotation recreates this activity. The host state is a
+    // plain remember, so any live overlay is dropped on rotation. That is the documented limitation
+    // (see README "Known limitation: configuration changes"), shown here as the default behavior.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
