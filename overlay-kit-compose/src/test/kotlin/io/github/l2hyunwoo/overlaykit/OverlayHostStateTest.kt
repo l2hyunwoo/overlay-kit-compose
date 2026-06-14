@@ -3,17 +3,7 @@ package io.github.l2hyunwoo.overlaykit
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
-/**
- * Exhaustive phase-transition table for the pure [OverlayHostState] store (no composables).
- *
- * Mirrors Design 2.0 §1/§9 transition rules:
- * - open → Entering
- * - close → Exiting
- * - revival (open existing) → Exiting → Visible
- * - exit-completion removal happens only when `Exiting && idle && !target`
- * - unmount is idempotent across phases
- * - closeAll's deferred removal does not delete a revived entry
- */
+/** Exhaustive phase-transition table for the pure [OverlayHostState] store (no composables). */
 class OverlayHostStateTest {
 
     private fun state() = OverlayHostState()

@@ -8,18 +8,13 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 
 /**
- * The host state for the nearest [OverlayHost]. `static` because the instance is a single stable
- * object created once per host (Design 2.0 §6): readers do not need invalidation when it changes,
- * because it never changes — only its internal snapshot state does.
+ * The host state for the nearest [OverlayHost]. `static` is sound because the instance is created
+ * once per host and never re-created — only its internal snapshot state changes.
  */
 public val LocalOverlayHostState: androidx.compose.runtime.ProvidableCompositionLocal<OverlayHostState> =
     staticCompositionLocalOf { error("No OverlayHostState provided. Wrap content in an OverlayHost.") }
 
-/**
- * Remember a single stable [OverlayHostState] for the lifetime of the composition. The instance is
- * created exactly once (`remember {}` with no keys) — never re-created — which is what makes the
- * `staticCompositionLocalOf` above sound (Design 2.0 §6).
- */
+/** Remember a single stable [OverlayHostState] for the lifetime of the composition. */
 @Composable
 public fun rememberOverlayHostState(): OverlayHostState = remember { OverlayHostState() }
 
@@ -28,7 +23,7 @@ public fun rememberOverlayHostState(): OverlayHostState = remember { OverlayHost
  *
  * @param placement default placement for overlays opened through this controller.
  * @param mainDispatcher dispatcher used to marshal `openAsync` cancellation teardown to the main
- *   thread; defaults to [Dispatchers.Main]'s immediate variant. Injectable for tests.
+ *   thread. Injectable for tests.
  */
 @Composable
 public fun rememberOverlayController(

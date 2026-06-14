@@ -11,20 +11,15 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 
 /**
- * Imperative handle for opening and closing overlays against an [OverlayHostState].
- *
- * Obtain one with [rememberOverlayController]. The controller is [Stable]; method references on it
- * are safe to pass as callbacks without breaking recomposition skipping (Design 2.0 §6).
+ * Imperative handle for opening and closing overlays against an [OverlayHostState]. Obtain one with
+ * [rememberOverlayController].
  */
 @Stable
 public interface OverlayController {
     /**
      * Open a fire-and-forget overlay. If [id] is null a fresh id is generated. If an overlay with
-     * [id] already exists and is animating out, it is **revived** instead of re-added. Returns the
+     * [id] already exists and is animating out, it is revived instead of re-added. Returns the
      * overlay id.
-     *
-     * Enter/revival happen synchronously in the calling event handler — not deferred to a
-     * `LaunchedEffect` (Design 2.0 §3).
      */
     public fun open(
         id: String? = null,
@@ -33,11 +28,8 @@ public interface OverlayController {
 
     /**
      * Open an overlay and suspend until it resolves itself via [AsyncOverlayScope.close], returning
-     * the supplied result. Cancellation of the calling coroutine tears the overlay down (the
-     * teardown is marshalled to the main dispatcher; Design 2.0 §5).
-     *
-     * Resume is **consume-once**: a double `close`, or a `close` racing `closeAll`, resumes the
-     * continuation exactly once (a second resume would throw `IllegalStateException`).
+     * the supplied result. Cancelling the calling coroutine tears the overlay down. A double `close`
+     * or a `close` racing `closeAll` still resumes exactly once.
      */
     public suspend fun <T> openAsync(
         id: String? = null,
@@ -58,14 +50,8 @@ public interface OverlayController {
 }
 
 /**
- * Default [OverlayController] bound to an [OverlayHostState].
- *
- * @param state the phase-gate store this controller drives.
- * @param scope a coroutine scope (typically `rememberCoroutineScope()`) used to marshal the
- *   `openAsync` cancellation teardown back onto the main thread.
- * @param mainDispatcher the dispatcher the cancellation teardown is dispatched to. Injectable so
- *   tests can supply a `TestDispatcher`; defaults to the main immediate dispatcher in the
- *   composable factory.
+ * @param mainDispatcher dispatcher the `openAsync` cancellation teardown is marshalled to.
+ *   Injectable so tests can supply a `TestDispatcher`.
  */
 internal class OverlayControllerImpl(
     private val state: OverlayHostState,
@@ -83,7 +69,6 @@ internal class OverlayControllerImpl(
         content: @Composable OverlayScope.() -> Unit,
     ): String {
         val overlayId = id ?: nextId()
-        // Revival path: an existing entry (possibly mid-exit) is brought back instead of re-added.
         if (state.revive(overlayId)) return overlayId
         state.add(
             OverlayEntry(
@@ -113,18 +98,13 @@ internal class OverlayControllerImpl(
             state.add(OverlayEntry(id = overlayId, placement = placement, content = wrapped))
         }
 
-        // The consume-once resolver lives in OverlayHostState; it is the single-resume gate.
-        // Resuming here is only ever reached by the one caller that won the CAS, so a double
-        // resume (which would throw IllegalStateException) is impossible.
         state.attachResolver(overlayId) { signal ->
             resumeOnce(continuation, signal)
         }
 
-        // Design 2.0 §5: invokeOnCancellation has NO execution-context guarantee
-        // (CancellableContinuation.kt:225-227). So the handler only unregisters the resolver here;
-        // the actual close + removal (snapshot-state writes) is marshalled to the main dispatcher.
+        // invokeOnCancellation has no execution-context guarantee, so it only unregisters the
+        // resolver here; the close (a snapshot-state write) is marshalled to the main dispatcher.
         continuation.invokeOnCancellation {
-            // Unregister so no late resolve targets a dead continuation.
             state.find(overlayId)?.resolver?.set(null)
             scope.launch(mainDispatcher) {
                 state.close(overlayId)
@@ -133,23 +113,18 @@ internal class OverlayControllerImpl(
     }
 
     private fun <T> resumeOnce(continuation: CancellableContinuation<T>, signal: ResolveSignal) {
-        // No `continuation.isActive` guard here: that is a TOCTOU race (Design 2.0 §4). The
-        // consume-once CAS in OverlayHostState already guarantees this resolver runs at most once,
-        // so a double resume (the only thing that would throw IllegalStateException) cannot happen.
-        // Resuming an already-cancelled continuation is a safe no-op in suspendCancellableCoroutine.
+        // The consume-once CAS in OverlayHostState guarantees this runs at most once, so no
+        // `isActive` guard (a TOCTOU race) is needed. Resuming a cancelled continuation is a no-op.
         when (signal) {
             is ResolveSignal.Value -> {
                 @Suppress("UNCHECKED_CAST")
                 continuation.resume(signal.value as T)
             }
-            // Removed without an explicit value: cancel the awaiting coroutine rather than resume.
             ResolveSignal.Removed -> continuation.cancel()
         }
     }
 
     override fun close(id: String) {
-        // If this overlay was opened via openAsync, route through the resolver gate with no value
-        // so the awaiting coroutine is cancelled on removal; otherwise a plain animated close.
         state.close(id)
     }
 

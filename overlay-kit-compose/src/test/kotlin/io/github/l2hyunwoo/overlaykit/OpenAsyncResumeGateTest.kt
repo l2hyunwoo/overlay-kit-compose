@@ -11,20 +11,13 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
- * Resume-gate tests for `openAsync` (Design 2.0 §4/§5/§9).
- *
- * The consume-once resolver in [OverlayHostState] must guarantee a single resume even when
- * `close` is called twice, or `closeAll` races an individual `close`. A second resume on the
- * underlying continuation would throw `IllegalStateException` (CancellableContinuationImpl.kt:521),
- * so "no crash + exactly one result" is the property under test.
+ * The consume-once resolver in [OverlayHostState] must resume exactly once even when `close` is
+ * called twice or `closeAll` races an individual `close` — a second resume would throw
+ * `IllegalStateException`, so "no crash + exactly one result" is the property under test.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class OpenAsyncResumeGateTest {
 
-    /**
-     * Build a controller wired to a store, sharing the test scheduler so the cancellation teardown
-     * (marshalled to [mainDispatcher]) is deterministic.
-     */
     private fun controller(
         state: OverlayHostState,
         dispatcher: kotlinx.coroutines.CoroutineDispatcher,
@@ -36,11 +29,8 @@ class OpenAsyncResumeGateTest {
         placement = OverlayPlacement.InComposition,
     )
 
-    /**
-     * Report exit completion as the host would once the (now-idle) exit transition settles. In a
-     * pure-store test the transition never animates, so reporting directly exercises the phase
-     * guard inside [OverlayHostState.onExitFinished].
-     */
+    // In a pure-store test the transition never animates, so reporting exit directly exercises the
+    // phase guard inside onExitFinished, as the host would once the exit settles.
     private fun OverlayHostState.completeExit(id: String) {
         onExitFinished(id)
     }
