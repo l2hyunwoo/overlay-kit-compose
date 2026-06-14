@@ -2,6 +2,8 @@ package io.github.l2hyunwoo.overlaykit
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -105,7 +107,18 @@ private fun DialogOverlay(
     entry: OverlayEntry,
 ) {
     Dialog(onDismissRequest = { state.close(entry.id) }) {
-        AnimatedVisibility(visibleState = entry.transitionState) {
+        // A Dialog is a separate WRAP_CONTENT platform window, not an in-composition Layout. The
+        // default AnimatedVisibility transition (fadeIn() + expandIn() / shrinkOut() + fadeOut())
+        // animates the content's measured *size* from 0 to full, which forces the dialog window to
+        // physically resize every frame (AndroidDialog window.setLayout) — the content visibly grows
+        // on enter and shrinks-and-lingers on exit/back. A size-changing transition is wrong for a
+        // window-hosted overlay; use fade only so the window is measured at full size once and the
+        // visual transition is purely alpha.
+        AnimatedVisibility(
+            visibleState = entry.transitionState,
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
             val scope = rememberOverlayScope(state, entry)
             entry.content(scope)
         }
