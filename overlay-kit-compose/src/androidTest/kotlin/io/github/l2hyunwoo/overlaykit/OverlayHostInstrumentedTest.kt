@@ -5,11 +5,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -247,8 +253,80 @@ class OverlayHostInstrumentedTest {
         rule.onNodeWithText("first").assertIsDisplayed()
     }
 
+    // (g) bringToFront re-stacks an entry to the top z-order while preserving the SAME entry
+    // identity, so the store reports the new order and the content stays in the tree.
+    @Test
+    fun bringToFront_reordersZIndexKeepingEntries() {
+        val h = setHost()
+        rule.runOnIdle { h.controller.open(id = "a") { content("a") } }
+        rule.waitForIdle()
+        rule.runOnIdle { h.controller.open(id = "b") { content("b") } }
+        rule.waitForIdle()
+        rule.runOnIdle { h.controller.open(id = "c") { content("c") } }
+        rule.waitForIdle()
+        // Insertion order is z-order: a (bottom) .. c (top).
+        assertThat(h.state.entries.map { it.id }).containsExactly("a", "b", "c").inOrder()
+
+        rule.runOnIdle { h.controller.bringToFront("a") }
+        rule.waitForIdle()
+
+        // 'a' is now the last (top-most) entry; b and c keep their relative order. All three
+        // overlays are still present (none disposed) and displayed.
+        assertThat(h.state.entries.map { it.id }).containsExactly("b", "c", "a").inOrder()
+        assertThat(h.state.entries).hasSize(3)
+        rule.onNodeWithText("a").assertIsDisplayed()
+        rule.onNodeWithText("b").assertIsDisplayed()
+        rule.onNodeWithText("c").assertIsDisplayed()
+    }
+
+    // (h) The movableContentOf payoff: a counter held in the overlay content's OWN `remember`
+    // survives a bringToFront reorder. If the host disposed and re-created the slot at the new index
+    // (plain key() reorder without a movable slot, or a remove+re-add), the counter would reset to
+    // its initial value. Surviving proves the slot MOVED, carrying the content's internal state.
+    @Test
+    fun bringToFront_preservesContentInternalRememberState() {
+        val h = setHost()
+        // Lower overlay carries a counter; an upper overlay sits on top of it.
+        rule.runOnIdle { h.controller.open(id = "counter") { Counter(tag = "counter") } }
+        rule.waitForIdle()
+        rule.runOnIdle { h.controller.open(id = "top") { content("top") } }
+        rule.waitForIdle()
+        assertThat(h.state.entries.map { it.id }).containsExactly("counter", "top").inOrder()
+
+        // Drive the lower overlay's internal remember state to 3.
+        rule.onNodeWithTag("counter-inc").performClick()
+        rule.onNodeWithTag("counter-inc").performClick()
+        rule.onNodeWithTag("counter-inc").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("counter-value").assertTextEquals("3")
+
+        // Re-stack the counter overlay to the top. With movableContentOf the slot — and its
+        // internal `remember { mutableIntStateOf(0) }` — moves with the entry.
+        rule.runOnIdle { h.controller.bringToFront("counter") }
+        rule.waitForIdle()
+        assertThat(h.state.entries.map { it.id }).containsExactly("top", "counter").inOrder()
+
+        // The counter is still 3, not reset to 0 — the content's own remember survived the reorder.
+        rule.onNodeWithTag("counter-value").assertTextEquals("3")
+        // And it still increments from the preserved value (the slot is live, not a stale snapshot).
+        rule.onNodeWithTag("counter-inc").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag("counter-value").assertTextEquals("4")
+    }
+
     @Composable
     private fun OverlayScope.content(label: String) {
         Text(label, Modifier.testTag(label))
+    }
+
+    /** Overlay content with its OWN `remember`-backed state, used to prove movable-slot survival. */
+    @Composable
+    private fun OverlayScope.Counter(tag: String) {
+        var count by remember { mutableIntStateOf(0) }
+        Box {
+            Text(count.toString(), Modifier.testTag("$tag-value"))
+            // testTag on the clickable Button itself so performClick targets the click handler.
+            Button(onClick = { count++ }, modifier = Modifier.testTag("$tag-inc")) { Text("inc") }
+        }
     }
 }
