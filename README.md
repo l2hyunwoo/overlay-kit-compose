@@ -1,8 +1,8 @@
 # overlay-kit-compose
 
-Imperative overlay management for Jetpack Compose. Open dialogs, sheets, banners, and toasts from
+Declarative overlay management for Jetpack Compose. Open dialogs, sheets, banners, and toasts from
 plain event handlers — no manual `mutableStateOf` flags, no leaked visibility booleans. A Compose
-port of the imperative model from [toss/overlay-kit](https://github.com/toss/overlay-kit).
+port of [toss/overlay-kit](https://github.com/toss/overlay-kit).
 
 Android only. Kotlin 2.x, Jetpack Compose.
 
