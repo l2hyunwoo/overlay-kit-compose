@@ -2,6 +2,7 @@ package io.github.l2hyunwoo.overlaykit
 
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -12,12 +13,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
@@ -220,6 +225,110 @@ class OverlayHostInstrumentedTest {
 
         rule.onNodeWithText("dialog-body").assertDoesNotExist()
         assertThat(h.state.find(id)).isNull()
+    }
+
+    // (e2) Regression — Dialog enters at full size, not animating its size 0 -> full.
+    //
+    // A Dialog is a separate WRAP_CONTENT platform window. The default AnimatedVisibility transition
+    // (fadeIn() + expandIn()) animates the content's measured size from 0x0 to full (EnterExitTransition
+    // expandIn default initialSize = IntSize(0, 0)), which forces the dialog window to physically
+    // resize every frame — the content visibly grows. The fix uses fadeIn()/fadeOut() so the content
+    // is measured at full size on the very first composed frame and only its alpha animates.
+    //
+    // This test freezes the clock (no auto-advance, so the entering transition cannot settle to full)
+    // and advances exactly ONE frame after open. With the fix the tagged content already occupies its
+    // full 260x200 bounds; with the buggy expandIn it would be clipped to ~0 on this first frame, so
+    // the assertions fail. We assert on getBoundsInRoot (CLIPPED bounds): expandIn lays the full-size
+    // content out inside a tiny growing, clipping container, so the clipped width/height is near 0
+    // mid-grow, whereas a pure fade leaves the content at full bounds throughout.
+    @Test
+    fun dialog_entersAtFullSizeWithoutSizeAnimation() {
+        val h = setHost(placement = OverlayPlacement.Dialog)
+
+        rule.mainClock.autoAdvance = false
+        rule.runOnUiThread {
+            h.controller.open {
+                Box(Modifier.size(width = 260.dp, height = 200.dp).testTag("dialog-sized"))
+            }
+        }
+        // One frame: enough to compose the Dialog window and place its content. With a size
+        // animation the content would still be near 0x0 here; with fade-only it is already full.
+        rule.mainClock.advanceTimeByFrame()
+
+        // getBoundsInRoot returns the CLIPPED bounds. Mid-expandIn the full-size content is laid out
+        // inside a tiny growing clipping container, so the clipped width/height is near 0; a pure fade
+        // leaves it at full bounds. assertWidthIsEqualTo/HeightIsEqualTo use the framework's own dp
+        // tolerance, so the buggy near-0 clip fails while the fade's full 260x200 passes.
+        val bounds = rule.onNodeWithTag("dialog-sized").getBoundsInRoot()
+        assertThat(bounds.right.value - bounds.left.value).isWithin(2f).of(260f)
+        assertThat(bounds.bottom.value - bounds.top.value).isWithin(2f).of(200f)
+        rule.onNodeWithTag("dialog-sized").assertWidthIsEqualTo(260.dp)
+        rule.onNodeWithTag("dialog-sized").assertHeightIsEqualTo(200.dp)
+    }
+
+    // (e3) Regression — a real system back drives the Dialog's exit as a pure fade that PRESERVES the
+    // content size, never the buggy size-shrinking exit.
+    //
+    // Back on a focused Dialog window routes dismissOnBackPress -> onDismissRequest -> state.close(id)
+    // -> Exiting -> the AnimatedVisibility exit runs. The buggy default exit (shrinkOut() + fadeOut())
+    // shrinks the content's laid-out size from full to 0 — inside a WRAP_CONTENT window this physically
+    // resizes the window every frame (the visible shrink-and-linger on back). The fix's fadeOut()-only
+    // exit keeps the content at full size and only animates alpha.
+    //
+    // We freeze the clock so the exit cannot be force-settled, fire a real back, then advance a few
+    // frames INTO the exit and assert the content's clipped bounds are STILL full 260x200. With the
+    // buggy shrinkOut the clipped size has already dropped well below full by these frames, so the
+    // assertion fails; the fade keeps it at full size, so it passes. This pins the exit's visual nature
+    // deterministically instead of relying on frame-count timing.
+    @Test
+    fun dialog_backExitsByFadeKeepingFullSize() {
+        val h = setHost(placement = OverlayPlacement.Dialog)
+        val id = rule.runOnIdle {
+            h.controller.open {
+                Box(Modifier.size(width = 260.dp, height = 200.dp).testTag("dialog-sized"))
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithTag("dialog-sized").assertIsDisplayed()
+        assertThat(h.state.find(id)?.phase).isEqualTo(OverlayPhase.Visible)
+
+        // Freeze the clock: from here only our explicit advanceTimeByFrame() drives the exit, so a
+        // size animation cannot be silently skipped past by auto-advance.
+        rule.mainClock.autoAdvance = false
+        // Real system back to the focused Dialog window. UI Automator routes the key at the system
+        // level to the dialog window (the bare host activity does not reliably hold focus on the
+        // emulator).
+        uiDevice.waitForIdle()
+        uiDevice.pressBack()
+
+        // Advance a few frames into the exit. A shrinkOut spring has visibly shrunk the laid-out size
+        // by now; a fade has not touched it. Loop until the entry actually enters Exiting so the back
+        // dispatch has landed, then sample the bounds a couple frames in.
+        var enteredExiting = false
+        repeat(20) {
+            rule.mainClock.advanceTimeByFrame()
+            rule.waitForIdle()
+            if (h.state.find(id)?.phase == OverlayPhase.Exiting) {
+                enteredExiting = true
+                return@repeat
+            }
+        }
+        assertThat(enteredExiting).isTrue()
+        // Two more frames into the exit transition — far enough that a size spring would be clearly
+        // mid-shrink, while a fade leaves the layout untouched.
+        rule.mainClock.advanceTimeByFrame()
+        rule.mainClock.advanceTimeByFrame()
+        rule.waitForIdle()
+
+        val bounds = rule.onNodeWithTag("dialog-sized").getBoundsInRoot()
+        assertThat(bounds.right.value - bounds.left.value).isWithin(2f).of(260f)
+        assertThat(bounds.bottom.value - bounds.top.value).isWithin(2f).of(200f)
+
+        // And the fade still resolves to a clean removal once allowed to settle.
+        rule.mainClock.autoAdvance = true
+        rule.waitUntil(timeoutMillis = 5_000) { h.state.find(id) == null }
+        assertThat(h.state.find(id)).isNull()
+        rule.onNodeWithTag("dialog-sized").assertDoesNotExist()
     }
 
     // (f) Revival: opening the same id while it is exiting reverses the exit; the entry is kept.
